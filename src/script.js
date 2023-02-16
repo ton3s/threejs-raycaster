@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
+
 import * as dat from 'lil-gui'
 
 /**
@@ -15,28 +18,119 @@ const canvas = document.querySelector('canvas.webgl')
 const scene = new THREE.Scene()
 
 /**
- * Objects
+ * Textures
  */
-const object1 = new THREE.Mesh(
-	new THREE.SphereGeometry(0.5, 16, 16),
-	new THREE.MeshBasicMaterial({ color: '#ff0000' })
+const textureLoader = new THREE.TextureLoader()
+
+// Grass Textures
+const grassColorTexture = textureLoader.load(
+	'/textures/stone-floor/basecolor.jpg'
 )
-object1.position.x = -2
-
-const object2 = new THREE.Mesh(
-	new THREE.SphereGeometry(0.5, 16, 16),
-	new THREE.MeshBasicMaterial({ color: '#ff0000' })
+const grassAmbientOcclusionTexture = textureLoader.load(
+	'/textures/stone-floor/ambientOcclusion.jpg'
+)
+const grassNormalTexture = textureLoader.load(
+	'/textures/stone-floor/normal.jpg'
+)
+const grassRoughnessTexture = textureLoader.load(
+	'/textures/stone-floor/roughness.jpg'
+)
+const grassHeightTexture = textureLoader.load(
+	'/textures/stone-floor/height.png'
 )
 
-const object3 = new THREE.Mesh(
-	new THREE.SphereGeometry(0.5, 16, 16),
-	new THREE.MeshBasicMaterial({ color: '#ff0000' })
+// Repeat grass texture
+grassColorTexture.repeat.set(8, 8)
+grassAmbientOcclusionTexture.repeat.set(8, 8)
+grassNormalTexture.repeat.set(8, 8)
+grassRoughnessTexture.repeat.set(8, 8)
+grassHeightTexture.repeat.set(8, 8)
+
+grassColorTexture.wrapS = THREE.RepeatWrapping
+grassAmbientOcclusionTexture.wrapS = THREE.RepeatWrapping
+grassNormalTexture.wrapS = THREE.RepeatWrapping
+grassRoughnessTexture.wrapS = THREE.RepeatWrapping
+grassHeightTexture.wrapS = THREE.RepeatWrapping
+
+grassColorTexture.wrapT = THREE.RepeatWrapping
+grassAmbientOcclusionTexture.wrapT = THREE.RepeatWrapping
+grassNormalTexture.wrapT = THREE.RepeatWrapping
+grassRoughnessTexture.wrapT = THREE.RepeatWrapping
+grassHeightTexture.wrapT = THREE.RepeatWrapping
+
+/**
+ * Models
+ */
+const dracoLoader = new DRACOLoader()
+// Specify path to a folder containing WASM/JS decoding libraries.
+dracoLoader.setDecoderPath('/draco/')
+
+const gltfLoader = new GLTFLoader()
+gltfLoader.setDRACOLoader(dracoLoader)
+
+// Duck
+let model = null
+gltfLoader.load('/models/Duck/glTF-Binary/Duck.glb', (gltf) => {
+	model = gltf.scene
+	model.traverse((node) => {
+		if (node.isMesh) {
+			node.castShadow = true
+			node.receiveShadow = true
+		}
+	})
+	scene.add(model)
+})
+
+/**
+ * Floor
+ */
+const floor = new THREE.Mesh(
+	new THREE.PlaneGeometry(20, 20, 100, 100),
+	new THREE.MeshStandardMaterial({
+		map: grassColorTexture,
+		aoMap: grassAmbientOcclusionTexture,
+		normalMap: grassNormalTexture,
+		roughnessMap: grassRoughnessTexture,
+		displacementMap: grassHeightTexture,
+		displacementScale: 0.2,
+		transparent: true,
+	})
 )
-object3.position.x = 2
+floor.geometry.setAttribute(
+	'uv2',
+	new THREE.Float32BufferAttribute(floor.geometry.attributes.uv.array, 2)
+)
+floor.rotation.x = -Math.PI * 0.5
+scene.add(floor)
 
-scene.add(object1, object2, object3)
+/**
+ * Lights
+ */
+// Ambient light
+const ambientLight = new THREE.AmbientLight('#b9d5ff', 0.2)
+gui
+	.add(ambientLight, 'intensity')
+	.min(0)
+	.max(1)
+	.step(0.001)
+	.name('ambient intensity')
+scene.add(ambientLight)
 
-const raycaster = new THREE.Raycaster()
+// Directional light
+const moonLight = new THREE.DirectionalLight('#b9d5ff', 0.7)
+moonLight.position.set(4, 5, -2)
+moonLight.shadow.mapSize.width = 256
+moonLight.shadow.mapSize.height = 256
+moonLight.shadow.camera.far = 15
+gui.add(moonLight, 'intensity').min(0).max(1).step(0.001).name('moon intensity')
+gui.add(moonLight.position, 'x').min(-5).max(5).step(0.001)
+gui.add(moonLight.position, 'y').min(-5).max(5).step(0.001)
+gui.add(moonLight.position, 'z').min(-5).max(5).step(0.001)
+scene.add(moonLight)
+
+// Shadows
+moonLight.castShadow = true
+floor.receiveShadow = true
 
 /**
  * Sizes
@@ -68,13 +162,6 @@ window.addEventListener('mousemove', (event) => {
 	mouse.x = (event.clientX / sizes.width) * 2 - 1
 	mouse.y = -(event.clientY / sizes.height) * 2 + 1
 })
-window.addEventListener('click', () => {
-	if (currentIntersect) {
-		if (currentIntersect.object === object1) {
-			console.log('click on a object 1')
-		}
-	}
-})
 
 /**
  * Camera
@@ -86,11 +173,12 @@ const camera = new THREE.PerspectiveCamera(
 	0.1,
 	100
 )
-camera.position.z = 3
+camera.position.set(3, 3.5, 6)
 scene.add(camera)
 
 // Controls
 const controls = new OrbitControls(camera, canvas)
+controls.target.set(0, 0.75, 0)
 controls.enableDamping = true
 
 /**
@@ -99,6 +187,8 @@ controls.enableDamping = true
 const renderer = new THREE.WebGLRenderer({
 	canvas: canvas,
 })
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
@@ -106,41 +196,25 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
  * Animate
  */
 const clock = new THREE.Clock()
-
-let currentIntersect
+let previousTime = 0
+const raycaster = new THREE.Raycaster()
 
 const tick = () => {
 	const elapsedTime = clock.getElapsedTime()
-
-	// Update objects
-	object1.position.y = Math.sin(elapsedTime * 0.3) * 1.5
-	object2.position.y = Math.sin(elapsedTime * 0.8) * 1.5
-	object3.position.y = Math.sin(elapsedTime * 1.4) * 1.5
+	const deltaTime = elapsedTime - previousTime
+	previousTime = elapsedTime
 
 	/**
 	 * Raycaster
 	 */
-	raycaster.setFromCamera(mouse, camera)
-	const objectsToTest = [object1, object2, object3]
-	const intersects = raycaster.intersectObjects(objectsToTest)
-
-	// Reset spheres to red
-	objectsToTest.forEach((object) => object.material.color.set('#ff0000'))
-	// Convert intersected spheres to blue
-	intersects.forEach((intersect) =>
-		intersect.object.material.color.set('#0000ff')
-	)
-
-	if (intersects.length) {
-		if (!currentIntersect) {
-			console.log('mouse enter')
+	if (model) {
+		raycaster.setFromCamera(mouse, camera)
+		const modelIntersects = raycaster.intersectObject(model)
+		if (modelIntersects.length) {
+			model.scale.set(1.2, 1.2, 1.2)
+		} else {
+			model.scale.set(1, 1, 1)
 		}
-		currentIntersect = intersects[0]
-	} else {
-		if (currentIntersect) {
-			console.log('mouse leave')
-		}
-		currentIntersect = null
 	}
 
 	// Update controls
